@@ -37,6 +37,8 @@ Este projeto é uma aplicação **Flask** para anonimização de planilhas. Util
 - Crie um arquivo .env na raiz do projeto.
 - Adicione sua chave no arquivo .env.
 
+---
+
 ## 🔒 Segurança
 - Variáveis de ambiente: Certifique-se de que sua chave da API está armazenada no arquivo .env e que o .env está listado no .gitignore para evitar vazamentos.
 - Dependências seguras: Use o arquivo requirements.txt para evitar versões inseguras de pacotes.
