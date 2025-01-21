@@ -35,6 +35,7 @@ Este projeto é uma aplicação **Flask** para anonimização de planilhas. Util
 
 ### 3️⃣ Configure sua chave da API OpenAI
 - Crie um arquivo .env na raiz do projeto.
+- Padrão .env: OPENAI_API_KEY=[CHAVEAPIOPENAI]
 - Adicione sua chave no arquivo .env.
 
 ---
