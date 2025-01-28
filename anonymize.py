@@ -1,23 +1,31 @@
+########################################
+# Configuração Inicial
+# - Importa bibliotecas essenciais como pandas, numpy e dotenv.
+# - Carrega as variáveis de ambiente do arquivo .env (contendo a chave da API OpenAI).
+# - Instancia o cliente OpenAI para classificar dados sensíveis.
+########################################
+
 import os
 import json
 import pandas as pd
 import numpy as np
-
-# Carrega variáveis de ambiente do .env
 from dotenv import load_dotenv
 load_dotenv()
-
-# Nova importação: utiliza o cliente OpenAI ao invés do openai.ChatCompletion
 from openai import OpenAI
 
-# Instancia o cliente com a sua chave da OpenAI
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY")
 )
 
+########################################
+# Função: carregar_arquivo
+# - Lê um arquivo CSV ou Excel enviado pelo usuário.
+# - Verifica se o arquivo existe antes de carregá-lo.
+# - Retorna um DataFrame com os dados e o nome do arquivo.
+########################################
+
 def carregar_arquivo(file_path):
     """Carrega CSV ou Excel de acordo com a extensão enviada pelo usuário."""
-    # Verifica se o arquivo existe no caminho fornecido
     if not os.path.exists(file_path):
         print(f"O arquivo {file_path} não existe. Verifique se o caminho está correto.")
         return None, None
@@ -30,6 +38,13 @@ def carregar_arquivo(file_path):
     file_name = os.path.basename(file_path)
     print(f"\nArquivo '{file_name}' carregado com sucesso!")
     return df, file_name
+
+########################################
+# Função: classificar_coluna_com_llm
+# - Envia o nome da coluna e alguns valores de exemplo para a API OpenAI.
+# - Retorna a classificação do tipo de dado (identificador, financeiro, etc.).
+# - Também retorna se o dado é sensível e uma explicação baseada na LGPD.
+########################################
 
 def classificar_coluna_com_llm(coluna, exemplos):
     """
@@ -75,7 +90,6 @@ EXEMPLOS (máx 5):
             temperature=0.0,
             max_tokens=300
         )
-        # Agora o conteúdo vem de response.choices[0].message.content
         content = response.choices[0].message.content
 
         result = json.loads(content)
@@ -90,6 +104,12 @@ EXEMPLOS (máx 5):
         print(f"[ERRO] Falha ao classificar coluna '{coluna}': {e}")
         return "texto", False, "Não foi possível obter explicação da LLM."
 
+########################################
+# Função: aplicar_differential_privacy
+# - Aplica o mecanismo de Laplace para adicionar ruído a dados sensíveis.
+# - Ignora valores iguais a zero para evitar distorções desnecessárias.
+# - O nível de ruído é controlado pelo parâmetro "epsilon".
+########################################
 
 def aplicar_differential_privacy(df, coluna, epsilon=1.0):
     """
@@ -101,12 +121,16 @@ def aplicar_differential_privacy(df, coluna, epsilon=1.0):
     #Cria uma máscara para valores que não sejam 0
     mask = df[coluna] != 0
 
-    #Gera o ruído somente para os valores não-zero
     ruido = np.random.laplace(loc=0, scale=sensibilidade/epsilon, size=mask.sum())
 
-    #Aplica o ruído somente onde o valor era != 0
     df.loc[mask, coluna] = (df.loc[mask, coluna] + ruido).round(2)
 
+########################################
+# Função: mascarar_quase_identificador
+# - Mascaramento simples para dados classificados como quase-identificadores.
+# - Ajusta datas para o primeiro dia do mês.
+# - Trunca textos, mantendo apenas os primeiros 5 caracteres e adicionando "***".
+########################################
 
 def mascarar_quase_identificador(df, coluna):
     """
@@ -115,12 +139,22 @@ def mascarar_quase_identificador(df, coluna):
     - Se for data (ex. data de nascimento): substituir dia por '01' ou suprimir dia.
     """
     if pd.api.types.is_datetime64_any_dtype(df[coluna]):
-        # Exemplo: manter apenas mês/ano, trocar dia para 1
+        #Exemplo: manter apenas mês/ano, trocar dia para 1
         df[coluna] = df[coluna].apply(lambda d: d.replace(day=1) if not pd.isna(d) else d)
     else:
-        # Se for string: por exemplo, manter só as primeiras 5 letras + '***'
+        #Se for string: por exemplo, manter só as primeiras 5 letras + '***'
         df[coluna] = df[coluna].astype(str).apply(lambda x: x[:5] + "***" if len(x) > 5 else x + "***")
 
+########################################
+# Função: anonimizar_planilha
+# - Processo principal de anonimização:
+#   1. Carrega o arquivo enviado.
+#   2. Classifica cada coluna usando o LLM.
+#   3. Remove identificadores e mascara quase-identificadores.
+#   4. Identifica colunas financeiras/demográficas para aplicação futura de DP.
+# - Salva um arquivo intermediário, sem privacidade diferencial aplicada.
+# - Retorna as colunas marcadas para DP e o caminho do arquivo intermediário.
+########################################
 
 def anonimizar_planilha(file_path, output_path=None):
     """
@@ -142,7 +176,7 @@ def anonimizar_planilha(file_path, output_path=None):
     df_anonimizado = df.copy()
     colunas = df_anonimizado.columns
 
-    # Lista para guardar colunas em que DP pode ser aplicada (financeiro/demografico numérico)
+    #Lista para guardar colunas em que DP pode ser aplicada (financeiro/demografico numérico)
     dp_columns = []
 
     for coluna in colunas:
@@ -156,19 +190,19 @@ def anonimizar_planilha(file_path, output_path=None):
 
         tipo_coluna, eh_sensivel, explicacao = classificar_coluna_com_llm(coluna, exemplos_str)
 
-        # Imprime a explicação antes de tomar a ação
+        #Imprime a explicação antes de tomar a ação
         print(f"\n[CLASSIFICAÇÃO] Coluna '{coluna}':")
         print(f"Tipo: {tipo_coluna}, eh_sensivel: {eh_sensivel}")
         print(f"Explicação (baseada na LGPD): {explicacao}")
 
         if eh_sensivel:
             if tipo_coluna == "identificador":
-                # Remove a coluna por completo
+                #Remove colunas identificadoras
                 df_anonimizado.drop(columns=[coluna], inplace=True)
                 print(f"[DROP] Coluna '{coluna}' => tipo '{tipo_coluna}'. Removida com base na LGPD.")
 
             elif tipo_coluna in ["financeiro", "demografico"]:
-                # Se for numérico, poderemos aplicar DP depois
+                #Se for numérico, poderemos aplicar DP depois
                 if pd.api.types.is_numeric_dtype(df_anonimizado[coluna]):
                     dp_columns.append(coluna)
                     print(f"[DEFER] Coluna '{coluna}' => tipo '{tipo_coluna}'. Marcada para DP futura.")
@@ -177,21 +211,20 @@ def anonimizar_planilha(file_path, output_path=None):
                     print(f"[DROP] Coluna '{coluna}' não é numérica mas foi classificada como '{tipo_coluna}'. Removida.")
 
             elif tipo_coluna == "quase_identificador":
-                # Converte (possivelmente) para datetime e faz mascaramento
+                #Converte (possivelmente) para datetime e faz mascaramento
                 df_anonimizado[coluna] = pd.to_datetime(df_anonimizado[coluna], errors="coerce")
                 mascarar_quase_identificador(df_anonimizado, coluna)
                 print(f"[MASK] Coluna '{coluna}' => tipo '{tipo_coluna}'. Aplicado mascaramento.")
 
             else:
-                # Qualquer outra sensível => dropar
+                #Qualquer outra sensível => dropar
                 df_anonimizado.drop(columns=[coluna], inplace=True)
                 print(f"[DROP] Coluna '{coluna}' => tipo '{tipo_coluna}'. Removida.")
 
         else:
-            # Se não for sensível, mantemos a coluna como está
+            #Se não for sensível, mantemos a coluna como está
             print(f"[OK] Coluna '{coluna}' => tipo '{tipo_coluna}', não sensível. Mantida.")
 
-    # Se não foi definido um output_path, gera um automaticamente
     if not output_path:
         base_name, _ = os.path.splitext(file_name)
         output_path = f"{base_name}_anonimizado.xlsx"
@@ -201,6 +234,13 @@ def anonimizar_planilha(file_path, output_path=None):
     print("Download concluído (em ambiente local, o arquivo está na mesma pasta do script).")
 
     return dp_columns, output_path
+
+########################################
+# Função: aplicar_dp_pos_classificacao
+# - Recebe o arquivo intermediário e uma lista de colunas classificadas como sensíveis.
+# - Aplica ruído Laplace (privacidade diferencial) apenas nas colunas numéricas relevantes.
+# - Salva e retorna o caminho do arquivo final anonimizado.
+########################################
 
 def aplicar_dp_pos_classificacao(file_path, dp_columns, epsilon=1.0, output_path=None):
     """

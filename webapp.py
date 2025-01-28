@@ -4,7 +4,7 @@ import tempfile
 import gradio as gr
 from dotenv import load_dotenv
 
-# Importa as funções do seu anonymize.py
+#Importa as funções de anonymize.py
 from anonymize import (
     anonimizar_planilha,
     aplicar_dp_pos_classificacao
@@ -27,7 +27,7 @@ def classify_and_mask(uploaded_file):
 
     input_path = uploaded_file.name
 
-    # Diretório temporário para armazenar o arquivo intermediário
+    #Diretório temporário para armazenar o arquivo intermediário
     tmpdir = tempfile.mkdtemp()
     output_path = os.path.join(tmpdir, "intermediario.xlsx")
 
@@ -37,7 +37,6 @@ def classify_and_mask(uploaded_file):
         return "Erro ao processar arquivo.", None, None
 
     if len(dp_cols) == 0:
-        # Não há colunas finance/demografico para DP
         msg = "Não há colunas classificadas como financeiro/demográfico."
     else:
         msg = (
@@ -65,7 +64,6 @@ def apply_dp(intermediate_file, dp_cols_str, custom_flag, epsilon_value):
     if not intermediate_file:
         return "Nenhum arquivo intermediário para processar.", None
 
-    # Se não há colunas dp
     if not dp_cols_str:
         return "Nenhuma coluna DP-eligível detectada.", intermediate_file
 
@@ -73,7 +71,7 @@ def apply_dp(intermediate_file, dp_cols_str, custom_flag, epsilon_value):
     if len(dp_columns) == 0:
         return "Nenhuma coluna DP-eligível detectada (lista vazia).", intermediate_file
 
-    # Define epsilon
+    #Define epsilon
     if custom_flag == "Sim":
         try:
             epsilon = float(epsilon_value)
@@ -82,7 +80,7 @@ def apply_dp(intermediate_file, dp_cols_str, custom_flag, epsilon_value):
     else:
         epsilon = 1.0
 
-    # Aplica DP
+    #Aplica DP
     tmpdir = tempfile.mkdtemp()
     final_path = os.path.join(tmpdir, "anonimizado_final.xlsx")
 
@@ -102,7 +100,7 @@ def apply_dp(intermediate_file, dp_cols_str, custom_flag, epsilon_value):
 ########################################
 # CSS Customizado
 ########################################
-# Ajuste cores, espaçamentos, etc. conforme seu gosto
+#Ajuste cores, espaçamentos, etc. conforme seu gosto
 custom_css = """
 /* Corpo da página */
 body {
@@ -172,12 +170,10 @@ body {
 ########################################
 # Construção da Interface Gradio
 ########################################
-# Usamos um tema interno do Gradio, ex: gr.themes.Soft()
 with gr.Blocks(css=custom_css, theme=gr.themes.Soft()) as demo:
     # Título
     gr.Markdown("<h1 id='title'>Anonimizador com Privacidade Diferencial</h1>")
     
-    # Instruções / Passos
     gr.Markdown(
         """
     ### Como funciona:
@@ -199,19 +195,19 @@ with gr.Blocks(css=custom_css, theme=gr.themes.Soft()) as demo:
         classify_btn = gr.Button("Classificar e Pré-Processar",
                                  variant="primary")
         
-        # Aqui exibimos a mensagem com colunas DP
+        #Aqui exibimos a mensagem com colunas DP
         dp_info = gr.Textbox(
             label="Colunas sensíveis para aplicar o ruído Laplace",
             lines=3,
             interactive=False,
             placeholder="(Informações aparecerão aqui após o processamento...)"
         )
-        # Guardamos o caminho do arquivo intermediário
+        #Guardamos o caminho do arquivo intermediário
         intermediate_file_box = gr.Textbox(
             label="Caminho do Arquivo Intermediário (oculto)",
             visible=False
         )
-        # Guardamos a string de colunas DP
+        #Guardamos a string de colunas DP
         dp_cols_box = gr.Textbox(
             label="dp_cols (oculto)",
             visible=False
@@ -250,6 +246,5 @@ with gr.Blocks(css=custom_css, theme=gr.themes.Soft()) as demo:
             outputs=[result_info, final_file]
         )
 
-# Executa localmente
 if __name__ == "__main__":
     demo.launch()
