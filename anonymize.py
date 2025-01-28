@@ -15,8 +15,9 @@ client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY")
 )
 
-def carregar_arquivo(file_path="C:/Users/kkaik/OneDrive/Área de Trabalho/pdsi aldo/differentialPrivacy/2023_TAB21_FOLHA_PAGAMENTO.xlsx - DADOS.csv"):
-    """Carrega CSV ou Excel de acordo com a extensão."""
+def carregar_arquivo(file_path):
+    """Carrega CSV ou Excel de acordo com a extensão enviada pelo usuário."""
+    # Verifica se o arquivo existe no caminho fornecido
     if not os.path.exists(file_path):
         print(f"O arquivo {file_path} não existe. Verifique se o caminho está correto.")
         return None, None
@@ -29,7 +30,6 @@ def carregar_arquivo(file_path="C:/Users/kkaik/OneDrive/Área de Trabalho/pdsi a
     file_name = os.path.basename(file_path)
     print(f"\nArquivo '{file_name}' carregado com sucesso!")
     return df, file_name
-
 
 def classificar_coluna_com_llm(coluna, exemplos):
     """
@@ -125,16 +125,25 @@ def mascarar_quase_identificador(df, coluna):
 def anonimizar_planilha(file_path, output_path=None):
     """
     Lê o arquivo de entrada (CSV ou Excel), classifica cada coluna com o LLM,
-    aplica a anonimização apropriada e salva o resultado em 'output_path' ou
-    em "<nome_original>_anonimizado.xlsx" caso 'output_path' seja None.
+    aplica remoção/mascaramento adequado conforme a LGPD, e salva um arquivo
+    intermediário (sem DP) em 'output_path' ou em "<nome_original>_anonimizado.xlsx"
+    se 'output_path' for None.
+
+    Retorna:
+      - dp_columns: lista de colunas classificadas como 'financeiro' ou 'demografico'
+        e que podem receber DP no passo seguinte.
+      - output_path: caminho do arquivo Excel gerado (sem ruído laplaciano).
     """
     df, file_name = carregar_arquivo(file_path)
     if df is None:
         print("Não foi possível carregar o arquivo. Verifique o caminho.")
-        return
+        return [], None
 
     df_anonimizado = df.copy()
     colunas = df_anonimizado.columns
+
+    # Lista para guardar colunas em que DP pode ser aplicada (financeiro/demografico numérico)
+    dp_columns = []
 
     for coluna in colunas:
         valores_unicos = df_anonimizado[coluna].dropna().unique()
@@ -154,25 +163,30 @@ def anonimizar_planilha(file_path, output_path=None):
 
         if eh_sensivel:
             if tipo_coluna == "identificador":
-                # Removemos a coluna
+                # Remove a coluna por completo
                 df_anonimizado.drop(columns=[coluna], inplace=True)
                 print(f"[DROP] Coluna '{coluna}' => tipo '{tipo_coluna}'. Removida com base na LGPD.")
+
             elif tipo_coluna in ["financeiro", "demografico"]:
-                # Se for numérico, aplicar DP; se não for numérico, removemos
+                # Se for numérico, poderemos aplicar DP depois
                 if pd.api.types.is_numeric_dtype(df_anonimizado[coluna]):
-                    aplicar_differential_privacy(df_anonimizado, coluna, epsilon=1.0)
-                    print(f"[DP] Coluna '{coluna}' => tipo '{tipo_coluna}'. Privacidade diferencial aplicada.")
+                    dp_columns.append(coluna)
+                    print(f"[DEFER] Coluna '{coluna}' => tipo '{tipo_coluna}'. Marcada para DP futura.")
                 else:
                     df_anonimizado.drop(columns=[coluna], inplace=True)
                     print(f"[DROP] Coluna '{coluna}' não é numérica mas foi classificada como '{tipo_coluna}'. Removida.")
+
             elif tipo_coluna == "quase_identificador":
+                # Converte (possivelmente) para datetime e faz mascaramento
                 df_anonimizado[coluna] = pd.to_datetime(df_anonimizado[coluna], errors="coerce")
                 mascarar_quase_identificador(df_anonimizado, coluna)
                 print(f"[MASK] Coluna '{coluna}' => tipo '{tipo_coluna}'. Aplicado mascaramento.")
+
             else:
-                # qualquer outra sensível => dropar
+                # Qualquer outra sensível => dropar
                 df_anonimizado.drop(columns=[coluna], inplace=True)
                 print(f"[DROP] Coluna '{coluna}' => tipo '{tipo_coluna}'. Removida.")
+
         else:
             # Se não for sensível, mantemos a coluna como está
             print(f"[OK] Coluna '{coluna}' => tipo '{tipo_coluna}', não sensível. Mantida.")
@@ -185,6 +199,35 @@ def anonimizar_planilha(file_path, output_path=None):
     df_anonimizado.to_excel(output_path, index=False)
     print(f"\n[SUCESSO] Planilha anonimizada salva como '{output_path}'.")
     print("Download concluído (em ambiente local, o arquivo está na mesma pasta do script).")
+
+    return dp_columns, output_path
+
+def aplicar_dp_pos_classificacao(file_path, dp_columns, epsilon=1.0, output_path=None):
+    """
+    Lê o arquivo 'file_path' (excel intermediário, já anonimizado exceto pela DP),
+    aplica ruído Laplace nas colunas listadas em 'dp_columns'
+    e salva no 'output_path' (ou <file_path>_dp.xlsx se não especificado).
+    
+    Retorna o caminho do arquivo final.
+    """
+    if not os.path.exists(file_path):
+        print(f"[ERRO] Arquivo intermediário '{file_path}' não encontrado.")
+        return None
+
+    df = pd.read_excel(file_path)
+
+    for coluna in dp_columns:
+        if coluna in df.columns:
+            aplicar_differential_privacy(df, coluna, epsilon=epsilon)
+            print(f"[DP] Coluna '{coluna}' - epsilon={epsilon}")
+
+    if not output_path:
+        base, ext = os.path.splitext(file_path)
+        output_path = base + "_dp.xlsx"
+
+    df.to_excel(output_path, index=False)
+    print(f"[SUCESSO] DP aplicada e salvo em '{output_path}'")
+    return output_path
 
 
 if __name__ == "__main__":
