@@ -1,5 +1,13 @@
-openai
-pandas
-numpy
-python-dotenv
-gradio
+# Bibliotecas essenciais para o projeto
+pandas>=1.5.0
+numpy>=1.23.0
+python-dotenv>=1.0.0
+openai>=0.27.8
+gradio>=3.23.0
+
+# Bibliotecas para testes
+pytest>=7.2.0
+pytest-mock>=3.8.0
+
+# Se quiser medir cobertura de testes
+pytest-cov>=4.0.0
